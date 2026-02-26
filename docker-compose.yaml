@@ -1,0 +1,149 @@
+###############################################################################
+#  UGREEN NAS (UGOS) — Media Request & Download Stack + VPN
+#  Services: Gluetun (VPN), qBittorrent, Seerr, Radarr, Sonarr, Prowlarr
+#
+#  VPN SETUP (do this first):
+#  1. Go to https://mullvad.net/en/account/wireguard-config
+#  2. Generate/download a WireGuard config file
+#  3. From the .conf file, copy:
+#       - PrivateKey  →  paste into WIREGUARD_PRIVATE_KEY below
+#       - Address     →  paste the IPv4 address (e.g. 10.x.x.x/32) into WIREGUARD_ADDRESSES
+#  4. Choose your preferred SERVER_CITIES below
+#
+#  FOLDER SETUP — Create these on your NAS under /volume1/docker/:
+#       gluetun, seerr, radarr, sonarr, prowlarr, qbittorrent
+#  Also create: /volume1/media/downloads, /volume1/media/movies, /volume1/media/tv
+#
+#  Update TZ to your timezone and PUID/PGID if needed (run `id` via SSH)
+#
+#  DEPLOYMENT (UGOS):
+#     Docker App → Projects → New Project → select folder → paste this YAML → Deploy
+#
+#  WEB UIs (replace <NAS_IP>):
+#     Seerr:        http://<NAS_IP>:5055
+#     Radarr:       http://<NAS_IP>:7878
+#     Sonarr:       http://<NAS_IP>:8989
+#     Prowlarr:     http://<NAS_IP>:9696
+#     qBittorrent:  http://<NAS_IP>:8080  (check gluetun logs for temp password)
+#
+#  VERIFY VPN IS WORKING:
+#     docker exec gluetun wget -qO- https://am.i.mullvad.net/connected
+###############################################################################
+
+services:
+
+  # ── VPN Gateway (Gluetun) ──────────────────────────────────────────────────
+  # qBittorrent traffic is routed through this container.
+  # Built-in kill switch: if VPN drops, all traffic is blocked automatically.
+  gluetun:
+    image: qmcgaw/gluetun:latest
+    container_name: gluetun
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      - VPN_SERVICE_PROVIDER=mullvad
+      - VPN_TYPE=wireguard
+      # ⚠️  REPLACE THESE with values from your Mullvad WireGuard config file
+      - WIREGUARD_PRIVATE_KEY=YOUR_WIREGUARD_PRIVATE_KEY
+      - WIREGUARD_ADDRESSES=YOUR_WIREGUARD_ADDRESS/32
+      # Pick your server location (examples: Amsterdam, London, Stockholm, Zurich)
+      - SERVER_CITIES=Zurich
+      - TZ=America/New_York
+    volumes:
+      - /volume1/docker/gluetun:/gluetun
+    ports:
+      # qBittorrent ports live here because qBit uses gluetun's network stack
+      - 8080:8080       # qBittorrent WebUI
+      - 6881:6881       # qBittorrent torrent port
+      - 6881:6881/udp
+
+  # ── Request Manager ────────────────────────────────────────────────────────
+  seerr:
+    image: ghcr.io/seerr-team/seerr:latest
+    container_name: seerr
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=10
+      - TZ=America/New_York
+    volumes:
+      - /volume1/docker/seerr:/app/config
+    ports:
+      - 5055:5055
+
+  # ── Movies ─────────────────────────────────────────────────────────────────
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=10
+      - TZ=America/New_York
+    volumes:
+      - /volume1/docker/radarr:/config
+      - /volume1/media/Movies:/movies
+      - /volume1/media/Downloads:/downloads
+    ports:
+      - 7878:7878
+
+  # ── TV Shows ───────────────────────────────────────────────────────────────
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=10
+      - TZ=America/New_York
+    volumes:
+      - /volume1/docker/sonarr:/config
+      - /volume1/media/TV:/tv
+      - /volume1/media/Downloads:/downloads
+    ports:
+      - 8989:8989
+
+  # ── Indexer Manager ────────────────────────────────────────────────────────
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=10
+      - TZ=America/New_York
+    volumes:
+      - /volume1/docker/prowlarr:/config
+    ports:
+      - 9696:9696
+
+  # ── Torrent Client (routed through VPN) ─────────────────────────────────────
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    restart: unless-stopped
+    network_mode: "service:gluetun"
+    depends_on:
+      - gluetun
+    environment:
+      - PUID=1000
+      - PGID=10
+      - TZ=America/New_York
+      - WEBUI_PORT=8080
+    volumes:
+      - /volume1/docker/qbittorrent:/config
+      - /volume1/media/Downloads:/downloads
+
+  # ── Cloudflare Bypass for Prowlarr ────────────────────────────────────────
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    restart: unless-stopped
+    environment:
+      - LOG_LEVEL=info
+      - TZ=America/New_York
+    ports:
+      - 8191:8191
