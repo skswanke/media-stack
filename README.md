@@ -13,6 +13,7 @@ A self-hosted media request and download stack for UGREEN NAS (UGOS), routing al
 | [Prowlarr](https://github.com/Prowlarr/Prowlarr) | Indexer manager for Radarr/Sonarr | 9696 |
 | [qBittorrent](https://www.qbittorrent.org) | Torrent client (tunneled through VPN) | 8080 |
 | [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) | Cloudflare bypass for Prowlarr indexers | 8191 |
+| [Decluttarr](https://github.com/ManiMatter/decluttarr) | Stalled/failed download cleaner for Radarr/Sonarr | — |
 
 qBittorrent runs on Gluetun's network stack — if the VPN drops, the kill switch blocks all torrent traffic automatically.
 
@@ -26,22 +27,38 @@ qBittorrent runs on Gluetun's network stack — if the VPN drops, the kill switc
    - `Address` (IPv4, e.g. `10.x.x.x/32`) → `WIREGUARD_ADDRESSES`
 3. Set `SERVER_CITIES` to your preferred exit location (e.g. `Amsterdam`, `London`, `Zurich`)
 
-### 2. Create directories on your NAS
+### 2. Decluttarr API keys and qBittorrent auth bypass
+
+Decluttarr connects directly to Radarr, Sonarr, and qBittorrent to remove stalled or failed downloads.
+
+**API keys** — set these in `docker-compose.yaml`:
+
+- `YOUR_RADARR_API_KEY` → Radarr → Settings → General → API Key
+- `YOUR_SONARR_API_KEY` → Sonarr → Settings → General → API Key
+
+**qBittorrent auth bypass** — Decluttarr talks to qBittorrent over the Docker bridge network (`172.17.0.0/16`) with no credentials, so qBittorrent needs to allow unauthenticated access from that subnet:
+
+1. Open qBittorrent → Tools → Options → Web UI
+2. Under **Authentication**, check **Bypass authentication for clients on localhost**
+3. In the **Bypass authentication for clients in whitelisted IP subnets** field, add `172.17.0.0/16`
+4. Save
+
+### 3. Create directories on your NAS
 
 ```bash
 # Config directories
-mkdir -p /volume1/docker/{gluetun,seerr,radarr,sonarr,prowlarr,qbittorrent}
+mkdir -p /volume1/docker/{gluetun,seerr,radarr,sonarr,prowlarr,qbittorrent,decluttarr}
 
 # Media directories
 mkdir -p /volume1/media/{Downloads,Movies,TV}
 ```
 
-### 3. Set timezone and user IDs
+### 4. Set timezone and user IDs
 
 - Update `TZ` in the compose file to match your timezone (e.g. `America/Chicago`)
 - Verify `PUID`/`PGID` match your NAS user — run `id` over SSH to check
 
-### 4. Deploy (UGOS)
+### 5. Deploy (UGOS)
 
 Docker App → Projects → New Project → select folder → paste the YAML → Deploy
 

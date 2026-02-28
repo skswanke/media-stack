@@ -137,6 +137,30 @@ services:
       - /volume1/docker/qbittorrent:/config
       - /volume1/media/Downloads:/downloads
 
+  # ── Stalled Download Handler ───────────────────────────────────────────────
+  decluttarr:
+    image: ghcr.io/manimatter/decluttarr:latest
+    container_name: decluttarr
+    restart: always
+    environment:
+      TZ: America/New_York
+      PUID: 1000
+      PGID: 10
+      LOG_LEVEL: INFO
+      TEST_RUN: "False"
+      TIMER: 10
+      REMOVE_STALLED: |
+        max_strikes: 3
+      REMOVE_FAILED_DOWNLOADS: "True"
+      RADARR: >
+        - base_url: "http://172.17.0.1:7878"
+          api_key: "YOUR_RADARR_API_KEY"
+      SONARR: >
+        - base_url: "http://172.17.0.1:8989"
+          api_key: "YOUR_SONARR_API_KEY"
+      QBITTORRENT: >
+        - base_url: "http://172.17.0.1:8080"
+
   # ── Cloudflare Bypass for Prowlarr ────────────────────────────────────────
   flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:latest
